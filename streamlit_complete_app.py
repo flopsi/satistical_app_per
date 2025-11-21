@@ -1,6 +1,16 @@
 """
 Statistical Data Analysis Platform - Streamlit App
-Complete 6-Phase Workflow converted from Colab
+Complete 6-Phase Workflow with Sales Analysis
+
+To run locally:
+    pip install -r requirements.txt
+    streamlit run streamlit_complete_app.py
+
+To deploy to Streamlit Cloud:
+    1. Push to GitHub
+    2. Go to share.streamlit.io
+    3. Connect repository
+    4. Deploy!
 """
 
 import streamlit as st
@@ -15,7 +25,6 @@ import io
 import warnings
 from typing import Dict, Tuple
 from datetime import datetime
-from sklearn.ensemble import IsolationForest
 
 warnings.filterwarnings('ignore')
 
@@ -64,14 +73,37 @@ class DataLoader:
         self.metadata = {}
 
     def load_from_upload(self, uploaded_file) -> Tuple[pd.DataFrame, Dict]:
-        """Load data from Streamlit file uploader."""
+        """Load data from Streamlit file uploader with enhanced parsing."""
         try:
             if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file)
+                try:
+                    df = pd.read_csv(uploaded_file, encoding='utf-8')
+                except:
+                    uploaded_file.seek(0)
+                    try:
+                        df = pd.read_csv(uploaded_file, encoding='latin-1')
+                    except:
+                        uploaded_file.seek(0)
+                        df = pd.read_csv(uploaded_file, encoding='utf-8', sep=None, engine='python')
             elif uploaded_file.name.endswith(('.xlsx', '.xls')):
-                df = pd.read_excel(uploaded_file)
+                df = pd.read_excel(uploaded_file, sheet_name=0)
+            elif uploaded_file.name.endswith('.json'):
+                df = pd.read_json(uploaded_file)
+            elif uploaded_file.name.endswith('.parquet'):
+                df = pd.read_parquet(uploaded_file)
+            elif uploaded_file.name.endswith('.tsv'):
+                df = pd.read_csv(uploaded_file, sep='\t')
             else:
+                st.error(f"Unsupported file type: {uploaded_file.name}")
                 return None, None
+
+            df.columns = df.columns.astype(str).str.strip()
+
+            for col in df.select_dtypes(include=['object']).columns:
+                try:
+                    df[col] = pd.to_numeric(df[col], errors='ignore')
+                except:
+                    pass
 
             self.df = df
             self.metadata = {
@@ -242,7 +274,7 @@ class OutlierAnalyzer:
 
 # Header
 st.markdown('<h1 class="main-header">📊 Statistical Analysis Platform</h1>', unsafe_allow_html=True)
-st.markdown("### Complete 6-Phase Data Analysis Workflow")
+st.markdown("### Complete Data Analysis Workflow with Sales Analytics")
 st.markdown("---")
 
 # Sidebar Navigation
@@ -253,14 +285,16 @@ phase = st.sidebar.radio(
         "🏠 Home",
         "📥 Phase 1: Data Ingestion",
         "📊 Phase 2: Data Profiling",
-        "🔬 Phase 3: Statistical Testing",
-        "📈 Phase 4: Visualization",
-        "📄 Phase 5: Reporting"
+        "💰 Phase 3: Sales Analysis",
+        "🔬 Phase 4: Statistical Testing",
+        "📈 Phase 5: Visualization",
+        "📄 Phase 6: Reporting"
     ]
 )
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 💡 Quick Info")
+if st.session_state.data is not None:
+    st.sidebar.success(f"✅ Data loaded: {len(st.session_state.data)} rows")
 
 # ============================================================================
 # HOME
@@ -269,24 +303,25 @@ st.sidebar.markdown("### 💡 Quick Info")
 if phase == "🏠 Home":
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Total Phases", "5", "Complete")
+        st.metric("Total Phases", "6", "Complete")
     with col2:
-        st.metric("Modules", "6+", "Ready")
+        st.metric("Modules", "8+", "Ready")
     with col3:
-        st.metric("Chart Types", "10+", "Interactive")
+        st.metric("Chart Types", "15+", "Interactive")
     with col4:
-        st.metric("Tests", "15+", "Available")
+        st.metric("Tests", "10+", "Available")
 
     st.markdown("---")
     st.markdown("### 🎯 Workflow Overview")
 
     workflow_df = pd.DataFrame({
-        'Phase': ['1️⃣ Data Ingestion', '2️⃣ Data Profiling', '3️⃣ Statistical Testing', 
-                  '4️⃣ Visualization', '5️⃣ Reporting'],
+        'Phase': ['1️⃣ Data Ingestion', '2️⃣ Data Profiling', '3️⃣ Sales Analysis',
+                  '4️⃣ Statistical Testing', '5️⃣ Visualization', '6️⃣ Reporting'],
         'Description': [
-            'Load CSV, Excel, or sample datasets',
+            'Load CSV, Excel, JSON, Parquet files',
             'Generate statistical profiles and correlations',
-            'Run hypothesis tests and normality checks',
+            'Analyze revenue, trends, top performers, growth',
+            'Run hypothesis tests and outlier detection',
             'Create interactive charts and plots',
             'Generate reports and export data'
         ]
@@ -307,7 +342,8 @@ elif phase == "📥 Phase 1: Data Ingestion":
 
     with tab1:
         st.markdown("### Upload Your Data")
-        uploaded_file = st.file_uploader("Choose CSV or Excel file", type=['csv', 'xlsx', 'xls'])
+        st.markdown("Supported formats: CSV, Excel, JSON, Parquet, TSV")
+        uploaded_file = st.file_uploader("Choose a file", type=['csv', 'xlsx', 'xls', 'json', 'parquet', 'tsv'])
 
         if uploaded_file:
             loader = DataLoader()
@@ -319,7 +355,7 @@ elif phase == "📥 Phase 1: Data Ingestion":
 
     with tab2:
         st.markdown("### Load Sample Dataset")
-        sample = st.selectbox("Choose sample:", ["None", "Iris", "Tips", "Titanic"])
+        sample = st.selectbox("Choose sample:", ["None", "Iris", "Tips", "Titanic", "Sales Demo"])
 
         if st.button("Load Sample"):
             if sample == "Iris":
@@ -331,6 +367,19 @@ elif phase == "📥 Phase 1: Data Ingestion":
             elif sample == "Titanic":
                 st.session_state.data = sns.load_dataset('titanic').head(100)
                 st.success("✅ Titanic dataset loaded!")
+            elif sample == "Sales Demo":
+                # Generate demo sales data
+                np.random.seed(42)
+                dates = pd.date_range('2024-01-01', periods=365, freq='D')
+                st.session_state.data = pd.DataFrame({
+                    'Date': dates,
+                    'Product': np.random.choice(['A', 'B', 'C', 'D'], 365),
+                    'Region': np.random.choice(['North', 'South', 'East', 'West'], 365),
+                    'Salesperson': np.random.choice(['John', 'Jane', 'Bob', 'Alice'], 365),
+                    'Revenue': np.random.randint(100, 5000, 365),
+                    'Units': np.random.randint(1, 50, 365)
+                })
+                st.success("✅ Sales demo dataset loaded!")
 
     with tab3:
         if st.session_state.data is not None:
@@ -338,7 +387,7 @@ elif phase == "📥 Phase 1: Data Ingestion":
             st.markdown("### Data Preview")
             st.dataframe(df.head(10), use_container_width=True)
 
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Rows", df.shape[0])
             with col2:
@@ -346,6 +395,9 @@ elif phase == "📥 Phase 1: Data Ingestion":
             with col3:
                 missing_pct = (df.isna().sum().sum() / (df.shape[0] * df.shape[1])) * 100
                 st.metric("Missing %", f"{missing_pct:.1f}%")
+            with col4:
+                numeric_cols = len(df.select_dtypes(include=[np.number]).columns)
+                st.metric("Numeric Cols", numeric_cols)
 
             # Quality Assessment
             if st.button("Run Quality Assessment"):
@@ -382,21 +434,14 @@ elif phase == "📊 Phase 2: Data Profiling":
             st.markdown("### Descriptive Statistics")
             st.dataframe(df.describe(), use_container_width=True)
 
-            # Enhanced Profiling
-            if st.button("Generate Enhanced Profile"):
-                profiler = EnhancedProfiler(df)
-                profiles = profiler.auto_profile()
-
-                for col, profile in profiles.items():
-                    with st.expander(f"📊 {col}"):
-                        if 'error' not in profile:
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("Mean", profile.get('mean', 'N/A'))
-                            with col2:
-                                st.metric("Median", profile.get('median', 'N/A'))
-                            with col3:
-                                st.metric("Std Dev", profile.get('std', 'N/A'))
+            st.markdown("### Column Information")
+            col_info = pd.DataFrame({
+                'Column': df.columns,
+                'Type': df.dtypes,
+                'Non-Null': df.notna().sum(),
+                'Unique': df.nunique()
+            })
+            st.dataframe(col_info, use_container_width=True)
 
         with tab2:
             st.markdown("### Correlation Analysis")
@@ -433,11 +478,113 @@ elif phase == "📊 Phase 2: Data Profiling":
                             st.warning("⚠️ Data may not be normally distributed")
 
 # ============================================================================
-# PHASE 3: STATISTICAL TESTING
+# PHASE 3: SALES ANALYSIS
 # ============================================================================
 
-elif phase == "🔬 Phase 3: Statistical Testing":
-    st.markdown("# 🔬 Phase 3: Statistical Testing")
+elif phase == "💰 Phase 3: Sales Analysis":
+    st.markdown("# 💰 Phase 3: Sales Analysis")
+    st.markdown("---")
+
+    if st.session_state.data is None:
+        st.warning("⚠️ Please load data in Phase 1 first!")
+    else:
+        df = st.session_state.data
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+
+        if len(numeric_cols) == 0:
+            st.error("❌ No numeric columns found for analysis")
+        else:
+            tab1, tab2, tab3, tab4 = st.tabs(["Revenue Analysis", "Time Series", "Top Performers", "Growth Rates"])
+
+            with tab1:
+                st.markdown("### Revenue Analysis")
+                revenue_col = st.selectbox("Select revenue column:", numeric_cols, key="rev_col")
+
+                if revenue_col:
+                    total_revenue = df[revenue_col].sum()
+                    avg_revenue = df[revenue_col].mean()
+                    median_revenue = df[revenue_col].median()
+
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Revenue", f"${total_revenue:,.2f}")
+                    with col2:
+                        st.metric("Average Revenue", f"${avg_revenue:,.2f}")
+                    with col3:
+                        st.metric("Median Revenue", f"${median_revenue:,.2f}")
+
+                    # Distribution
+                    fig = px.histogram(df, x=revenue_col, nbins=30, 
+                                     title=f"Revenue Distribution: {revenue_col}")
+                    st.plotly_chart(fig, use_container_width=True)
+
+            with tab2:
+                st.markdown("### Time Series Analysis")
+
+                # Auto-detect date columns
+                date_cols = [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col]) 
+                           or 'date' in col.lower() or 'time' in col.lower()]
+
+                if len(date_cols) == 0:
+                    st.info("No date columns detected. Try converting a column to datetime first.")
+                else:
+                    date_col = st.selectbox("Select date column:", date_cols, key="date_col")
+                    metric_col = st.selectbox("Select metric column:", numeric_cols, key="metric_col")
+
+                    if date_col and metric_col:
+                        df_sorted = df.sort_values(date_col)
+                        fig = px.line(df_sorted, x=date_col, y=metric_col,
+                                    title=f"{metric_col} Over Time")
+                        st.plotly_chart(fig, use_container_width=True)
+
+            with tab3:
+                st.markdown("### Top Performers")
+
+                group_col = st.selectbox("Group by:", df.columns, key="group_col")
+                value_col = st.selectbox("Measure:", numeric_cols, key="value_col")
+                top_n = st.slider("Show top N:", 5, 50, 10)
+
+                if group_col and value_col:
+                    top_performers = df.groupby(group_col)[value_col].sum().sort_values(ascending=False).head(top_n)
+
+                    fig = px.bar(x=top_performers.index, y=top_performers.values,
+                               title=f"Top {top_n} {group_col} by {value_col}",
+                               labels={'x': group_col, 'y': value_col})
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    st.dataframe(top_performers.reset_index().rename(columns={group_col: 'Rank', value_col: 'Total'}), 
+                               use_container_width=True)
+
+            with tab4:
+                st.markdown("### Growth Rate Analysis")
+
+                if len(numeric_cols) > 0:
+                    growth_col = st.selectbox("Select column for growth:", numeric_cols, key="growth_col")
+
+                    if growth_col and len(df) > 1:
+                        df_sorted = df.sort_index()
+                        growth_rates = df_sorted[growth_col].pct_change() * 100
+
+                        avg_growth = growth_rates.mean()
+                        max_growth = growth_rates.max()
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Average Growth Rate", f"{avg_growth:.2f}%")
+                        with col2:
+                            st.metric("Max Growth Rate", f"{max_growth:.2f}%")
+
+                        fig = px.line(x=range(len(growth_rates)), y=growth_rates,
+                                    title=f"{growth_col} Growth Rate Over Time",
+                                    labels={'x': 'Period', 'y': 'Growth Rate (%)'})
+                        st.plotly_chart(fig, use_container_width=True)
+
+# ============================================================================
+# PHASE 4: STATISTICAL TESTING
+# ============================================================================
+
+elif phase == "🔬 Phase 4: Statistical Testing":
+    st.markdown("# 🔬 Phase 4: Statistical Testing")
     st.markdown("---")
 
     if st.session_state.data is None:
@@ -456,26 +603,29 @@ elif phase == "🔬 Phase 3: Statistical Testing":
                 col2 = st.selectbox("Variable 2:", numeric_cols, index=min(1, len(numeric_cols)-1))
 
                 if st.button("Run Test"):
-                    if test_type == "Correlation (Pearson)":
-                        r, p = stats.pearsonr(df[col1].dropna(), df[col2].dropna())
-                    else:
-                        r, p = stats.spearmanr(df[col1].dropna(), df[col2].dropna())
+                    data1 = df[col1].dropna()
+                    data2 = df[col2].dropna()
 
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.metric("Correlation", f"{r:.4f}")
-                    with col_b:
-                        st.metric("P-value", f"{p:.4f}")
+                    if len(data1) > 0 and len(data2) > 0:
+                        if test_type == "Correlation (Pearson)":
+                            r, p = stats.pearsonr(data1, data2)
+                        else:
+                            r, p = stats.spearmanr(data1, data2)
 
-                    if p < 0.05:
-                        st.success("✅ Significant correlation detected (p < 0.05)")
-                    else:
-                        st.info("No significant correlation (p ≥ 0.05)")
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.metric("Correlation", f"{r:.4f}")
+                        with col_b:
+                            st.metric("P-value", f"{p:.4f}")
 
-                    # Scatter plot
-                    fig = px.scatter(df, x=col1, y=col2, trendline="ols",
-                                   title=f'{col1} vs {col2}')
-                    st.plotly_chart(fig, use_container_width=True)
+                        if p < 0.05:
+                            st.success("✅ Significant correlation detected (p < 0.05)")
+                        else:
+                            st.info("No significant correlation (p ≥ 0.05)")
+
+                        # Scatter plot without trendline
+                        fig = px.scatter(df, x=col1, y=col2, title=f'{col1} vs {col2}')
+                        st.plotly_chart(fig, use_container_width=True)
 
         elif test_type == "Outlier Detection (IQR)":
             col = st.selectbox("Select column:", numeric_cols)
@@ -490,11 +640,11 @@ elif phase == "🔬 Phase 3: Statistical Testing":
                 st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================================
-# PHASE 4: VISUALIZATION
+# PHASE 5: VISUALIZATION
 # ============================================================================
 
-elif phase == "📈 Phase 4: Visualization":
-    st.markdown("# 📈 Phase 4: Visualization")
+elif phase == "📈 Phase 5: Visualization":
+    st.markdown("# 📈 Phase 5: Visualization")
     st.markdown("---")
 
     if st.session_state.data is None:
@@ -535,11 +685,11 @@ elif phase == "📈 Phase 4: Visualization":
                 st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================================
-# PHASE 5: REPORTING
+# PHASE 6: REPORTING
 # ============================================================================
 
-elif phase == "📄 Phase 5: Reporting":
-    st.markdown("# 📄 Phase 5: Reporting")
+elif phase == "📄 Phase 6: Reporting":
+    st.markdown("# 📄 Phase 6: Reporting")
     st.markdown("---")
 
     if st.session_state.data is None:
